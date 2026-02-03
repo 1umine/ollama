@@ -41,6 +41,30 @@ var (
 	VerifyDownload func() error
 )
 
+func init() {
+	applyUpdateCheckIntervalFromEnv()
+}
+
+func applyUpdateCheckIntervalFromEnv() {
+	const envKey = "OLLAMA_UPDATE_CHECK_INTERVAL"
+	value, ok := os.LookupEnv(envKey)
+	if !ok || strings.TrimSpace(value) == "" {
+		return
+	}
+
+	interval, err := time.ParseDuration(value)
+	if err != nil {
+		secs, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			slog.Warn("invalid update check interval", "env", envKey, "value", value, "error", err)
+			return
+		}
+		interval = time.Duration(secs) * time.Second
+	}
+
+	UpdateCheckInterval = interval
+}
+
 // TODO - maybe move up to the API package?
 type UpdateResponse struct {
 	UpdateURL     string `json:"url"`
@@ -251,6 +275,10 @@ func (u *Updater) StartBackgroundUpdaterChecker(ctx context.Context, cb func(str
 	go func() {
 		// Don't blast an update message immediately after startup
 		time.Sleep(UpdateCheckInitialDelay)
+		if UpdateCheckInterval <= 0 || strings.TrimSpace(UpdateCheckURLBase) == "" {
+			slog.Info("background update checker disabled")
+			return
+		}
 		slog.Info("beginning update checker", "interval", UpdateCheckInterval)
 		for {
 			available, resp := u.checkForUpdate(ctx)
